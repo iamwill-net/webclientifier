@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     Run this on the server that hosts the RD Web Access role (the /RDWeb site).
-    In our usual two-server layout that's the RDG box (RD Gateway + RD Web Access),
+    In a typical two-server layout that's the RDG box (RD Gateway + RD Web Access),
     with the RDS box holding the Connection Broker + Session Host.
 
     Steps:
@@ -34,7 +34,7 @@
     .\webclientifier.ps1
 
 .EXAMPLE
-    .\webclientifier.ps1 -ConnectionBroker rds01.school.local -BrokerCertPath C:\temp\broker.cer
+    .\webclientifier.ps1 -ConnectionBroker rds01.contoso.local -BrokerCertPath C:\temp\broker.cer
 #>
 [CmdletBinding()]
 param(

@@ -38,7 +38,7 @@ From an **elevated Windows PowerShell 5.1** prompt (not PowerShell 7):
 | `-AllowTelemetry` | Leave Microsoft telemetry on (it's suppressed by default). |
 
 ```powershell
-.\webclientifier.ps1 -ConnectionBroker rds01.school.local -BrokerCertPath C:\temp\broker.cer
+.\webclientifier.ps1 -ConnectionBroker rds01.contoso.local -BrokerCertPath C:\temp\broker.cer
 ```
 
 ## What it does

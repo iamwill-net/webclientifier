@@ -34,6 +34,7 @@ From an **elevated Windows PowerShell 5.1** prompt (not PowerShell 7):
 | --- | --- |
 | `-ConnectionBroker <fqdn>` | Set the Connection Broker if auto-detection fails. |
 | `-BrokerCertPath <path.cer>` | Use this broker certificate (public key only) instead of auto-detecting it. |
+| `-AllowExpiredCert` | Install even if the broker certificate has expired, without prompting. |
 | `-IncludeTest` | Also publish to the web client's test channel. |
 | `-AllowTelemetry` | Leave Microsoft telemetry on (it's suppressed by default). |
 
@@ -49,7 +50,8 @@ From an **elevated Windows PowerShell 5.1** prompt (not PowerShell 7):
 4. **Gets the broker certificate** assigned to the RDS deployment (the RDRedirector role, falling back to RDPublishing):
    - If the same certificate is on this server (typical with a shared or wildcard cert), it uses that copy.
    - Otherwise it exports the certificate from the broker over PowerShell remoting.
-   - It warns if the certificate is self-signed or expires within 60 days, and stops if it has expired.
+   - It warns if the certificate is self-signed or expires within 60 days.
+   - If the certificate has expired, it asks whether to **Retry** (after you renew or assign a new certificate), **Use anyway**, or **Abort**.
 5. **Imports the certificate and publishes the latest web client** to production.
 6. **Checks the licensing mode** and warns if it's Per Device.
 

@@ -24,6 +24,9 @@
 .PARAMETER BrokerCertPath
     Path to a .cer (public key only) of the broker's certificate. Skips auto-detection.
 
+.PARAMETER AllowExpiredCert
+    Install even if the broker certificate has expired, without prompting.
+
 .PARAMETER IncludeTest
     Also publish the package to the test channel (/RDWeb/webclient-test... via Type Test).
 
@@ -40,6 +43,7 @@
 param(
     [string]$ConnectionBroker,
     [string]$BrokerCertPath,
+    [switch]$AllowExpiredCert,
     [switch]$IncludeTest,
     [switch]$AllowTelemetry
 )
@@ -178,74 +182,107 @@ Write-Ok "Connection Broker: $ConnectionBroker"
 
 Write-Step 'Getting Connection Broker certificate'
 
+$suppliedCertPath = $BrokerCertPath
 $tempCer = $null
-if (-not $BrokerCertPath) {
-    # Use the cert already assigned to the RDS deployment roles. The web client needs the
-    # one the broker presents for RDP (RDRedirector); RDPublishing is normally the same cert.
-    $thumb = $null
-    try {
-        Import-Module RemoteDesktop -ErrorAction Stop
-        $roleCerts = Get-RDCertificate -ConnectionBroker $ConnectionBroker
-        $roleCerts | Format-Table Role, Level, Subject, Thumbprint, ExpiresOn -AutoSize | Out-String | Write-Host
 
-        $thumb = ($roleCerts | Where-Object { $_.Role -eq 'RDRedirector' -and $_.Thumbprint }).Thumbprint
-        if (-not $thumb) {
-            $thumb = ($roleCerts | Where-Object { $_.Role -eq 'RDPublishing' -and $_.Thumbprint }).Thumbprint
-            if ($thumb) { Write-Warning 'No RDRedirector cert configured - using the RDPublishing cert instead.' }
-        }
-        if (-not $thumb) {
-            throw 'No certificate is assigned to the RDRedirector/RDPublishing roles. Assign one in Server Manager > RDS > Deployment Properties > Certificates.'
-        }
-        if (($roleCerts | Where-Object Thumbprint | Select-Object -ExpandProperty Thumbprint -Unique).Count -gt 1) {
-            Write-Warning 'The RDS roles use different certificates - the broker (RDRedirector) cert will be used.'
-        }
-    } catch [System.Management.Automation.RuntimeException] {
-        if ($_.Exception.Message -like 'No certificate is assigned*') { throw }
-        Write-Info "Get-RDCertificate failed ($($_.Exception.Message)); falling back to the broker's RDP listener cert"
-    }
+# Loops so the cert can be renewed/reassigned and re-checked without restarting the script
+while ($true) {
+    $BrokerCertPath = $suppliedCertPath
+    if ($tempCer) { Remove-Item $tempCer -Force -ErrorAction SilentlyContinue; $tempCer = $null }
 
-    $cert = $null
-    if ($thumb) {
-        Write-Info "Broker RDRedirector thumbprint: $thumb"
-        $cert = Get-ChildItem Cert:\LocalMachine\My | Where-Object Thumbprint -eq $thumb
-        if ($cert) { Write-Ok 'Same certificate is present locally (shared/wildcard cert)' }
-    }
+    if (-not $BrokerCertPath) {
+        # Use the cert already assigned to the RDS deployment roles. The web client needs the
+        # one the broker presents for RDP (RDRedirector); RDPublishing is normally the same cert.
+        $thumb = $null
+        try {
+            Import-Module RemoteDesktop -ErrorAction Stop
+            $roleCerts = Get-RDCertificate -ConnectionBroker $ConnectionBroker
+            $roleCerts | Format-Table Role, Level, Subject, Thumbprint, ExpiresOn -AutoSize | Out-String | Write-Host
 
-    if (-not $cert) {
-        Write-Info "Exporting certificate from $ConnectionBroker via PowerShell remoting"
-        $bytes = Invoke-Command -ComputerName $ConnectionBroker -ArgumentList $thumb -ScriptBlock {
-            param($thumb)
+            $thumb = ($roleCerts | Where-Object { $_.Role -eq 'RDRedirector' -and $_.Thumbprint }).Thumbprint
             if (-not $thumb) {
-                # Fall back to whatever the RDP listener is bound to
-                $thumb = (Get-CimInstance -Namespace root\cimv2\TerminalServices -ClassName Win32_TSGeneralSetting |
-                          Where-Object TerminalName -eq 'RDP-Tcp').SSLCertificateSHA1Hash
+                $thumb = ($roleCerts | Where-Object { $_.Role -eq 'RDPublishing' -and $_.Thumbprint }).Thumbprint
+                if ($thumb) { Write-Warning 'No RDRedirector cert configured - using the RDPublishing cert instead.' }
             }
-            $c = Get-ChildItem Cert:\LocalMachine\My, 'Cert:\LocalMachine\Remote Desktop' -ErrorAction SilentlyContinue |
-                 Where-Object Thumbprint -eq $thumb | Select-Object -First 1
-            if (-not $c) { throw "Certificate $thumb not found on $env:COMPUTERNAME" }
-            $c.Export([Security.Cryptography.X509Certificates.X509ContentType]::Cert)
+            if (-not $thumb) {
+                throw 'No certificate is assigned to the RDRedirector/RDPublishing roles. Assign one in Server Manager > RDS > Deployment Properties > Certificates.'
+            }
+            if (($roleCerts | Where-Object Thumbprint | Select-Object -ExpandProperty Thumbprint -Unique).Count -gt 1) {
+                Write-Warning 'The RDS roles use different certificates - the broker (RDRedirector) cert will be used.'
+            }
+        } catch [System.Management.Automation.RuntimeException] {
+            if ($_.Exception.Message -like 'No certificate is assigned*') { throw }
+            Write-Info "Get-RDCertificate failed ($($_.Exception.Message)); falling back to the broker's RDP listener cert"
         }
-        $cert = New-Object Security.Cryptography.X509Certificates.X509Certificate2(,[byte[]]$bytes)
-        Write-Ok "Exported from $ConnectionBroker"
+
+        $cert = $null
+        if ($thumb) {
+            Write-Info "Broker RDRedirector thumbprint: $thumb"
+            $cert = Get-ChildItem Cert:\LocalMachine\My | Where-Object Thumbprint -eq $thumb
+            if ($cert) { Write-Ok 'Same certificate is present locally (shared/wildcard cert)' }
+        }
+
+        if (-not $cert) {
+            Write-Info "Exporting certificate from $ConnectionBroker via PowerShell remoting"
+            $bytes = Invoke-Command -ComputerName $ConnectionBroker -ArgumentList $thumb -ScriptBlock {
+                param($thumb)
+                if (-not $thumb) {
+                    # Fall back to whatever the RDP listener is bound to
+                    $thumb = (Get-CimInstance -Namespace root\cimv2\TerminalServices -ClassName Win32_TSGeneralSetting |
+                              Where-Object TerminalName -eq 'RDP-Tcp').SSLCertificateSHA1Hash
+                }
+                $c = Get-ChildItem Cert:\LocalMachine\My, 'Cert:\LocalMachine\Remote Desktop' -ErrorAction SilentlyContinue |
+                     Where-Object Thumbprint -eq $thumb | Select-Object -First 1
+                if (-not $c) { throw "Certificate $thumb not found on $env:COMPUTERNAME" }
+                $c.Export([Security.Cryptography.X509Certificates.X509ContentType]::Cert)
+            }
+            $cert = New-Object Security.Cryptography.X509Certificates.X509Certificate2(,[byte[]]$bytes)
+            Write-Ok "Exported from $ConnectionBroker"
+        }
+
+        $tempCer = Join-Path $env:TEMP "rdbroker-$($cert.Thumbprint).cer"
+        [IO.File]::WriteAllBytes($tempCer, $cert.Export([Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+        $BrokerCertPath = $tempCer
     }
 
-    $tempCer = Join-Path $env:TEMP "rdbroker-$($cert.Thumbprint).cer"
-    [IO.File]::WriteAllBytes($tempCer, $cert.Export([Security.Cryptography.X509Certificates.X509ContentType]::Cert))
-    $BrokerCertPath = $tempCer
-}
+    if (-not (Test-Path $BrokerCertPath)) { throw "Broker certificate not found: $BrokerCertPath" }
 
-if (-not (Test-Path $BrokerCertPath)) { throw "Broker certificate not found: $BrokerCertPath" }
+    $brokerCert = New-Object Security.Cryptography.X509Certificates.X509Certificate2($BrokerCertPath)
+    Write-Info "Subject:  $($brokerCert.Subject)"
+    $daysLeft = [int]($brokerCert.NotAfter - (Get-Date)).TotalDays
+    Write-Info "Expires:  $($brokerCert.NotAfter.ToString('dd MMM yyyy')) ($daysLeft days)"
+    if ($brokerCert.Subject -eq $brokerCert.Issuer) {
+        Write-Warning 'Broker certificate is self-signed. The web client will fail to connect unless every client trusts it - use a CA-issued cert.'
+    }
 
-$brokerCert = New-Object Security.Cryptography.X509Certificates.X509Certificate2($BrokerCertPath)
-Write-Info "Subject:  $($brokerCert.Subject)"
-$daysLeft = [int]($brokerCert.NotAfter - (Get-Date)).TotalDays
-Write-Info "Expires:  $($brokerCert.NotAfter.ToString('dd MMM yyyy')) ($daysLeft days)"
-if ($daysLeft -lt 0) { throw 'The broker certificate has expired - renew it first.' }
-if ($daysLeft -lt 60) {
-    Write-Warning "Broker certificate expires in $daysLeft days. After renewing it, re-run this script so the web client gets the new cert."
-}
-if ($brokerCert.Subject -eq $brokerCert.Issuer) {
-    Write-Warning 'Broker certificate is self-signed. The web client will fail to connect unless every client trusts it - use a CA-issued cert.'
+    if ($daysLeft -ge 0) {
+        if ($daysLeft -lt 60) {
+            Write-Warning "Broker certificate expires in $daysLeft days. After renewing it, re-run this script so the web client gets the new cert."
+        }
+        break
+    }
+
+    Write-Warning 'The broker certificate has EXPIRED. The web client will not connect until a valid cert is assigned and this script is re-run.'
+    if ($AllowExpiredCert) {
+        Write-Warning '-AllowExpiredCert set - continuing with the expired certificate.'
+        break
+    }
+
+    $choices = [System.Management.Automation.Host.ChoiceDescription[]]@(
+        (New-Object System.Management.Automation.Host.ChoiceDescription '&Retry', 'Renew/assign the new cert first (Deployment Properties > Certificates), then check again.'),
+        (New-Object System.Management.Automation.Host.ChoiceDescription '&Use anyway', 'Install the web client with the expired cert. Re-run the script after renewing.'),
+        (New-Object System.Management.Automation.Host.ChoiceDescription '&Abort', 'Stop without changing anything.')
+    )
+    try {
+        $answer = $Host.UI.PromptForChoice('Expired certificate', 'What do you want to do?', $choices, 0)
+    } catch {
+        throw 'The broker certificate has expired. Renew it, or re-run with -AllowExpiredCert to install anyway.'
+    }
+    # (if, not switch - break/continue inside a switch only affect the switch)
+    if ($answer -eq 0) { Write-Step 'Re-checking Connection Broker certificate'; continue }
+    if ($answer -eq 1) { Write-Warning 'Continuing with the expired certificate.'; break }
+    if ($tempCer) { Remove-Item $tempCer -Force -ErrorAction SilentlyContinue }
+    throw 'Aborted - broker certificate has expired.'
 }
 
 # --- Install web client -----------------------------------------------------

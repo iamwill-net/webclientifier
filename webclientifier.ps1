@@ -138,6 +138,19 @@ if (-not $ConnectionBroker) {
     }
 }
 
+if (-not $ConnectionBroker) {
+    # 1b. Effective IIS setting - can be set at a higher level than RDWeb\Pages\web.config
+    try {
+        Import-Module WebAdministration -ErrorAction Stop
+        $value = (Get-WebConfigurationProperty -PSPath 'IIS:\Sites\Default Web Site\RDWeb\Pages' `
+                    -Filter "appSettings/add[@key='radcmserver']" -Name value -ErrorAction Stop).Value
+        Write-Info "IIS effective radcmserver = '$value'"
+        if ($value -and $value -notin @('localhost', '127.0.0.1', '.')) { $ConnectionBroker = $value }
+    } catch {
+        Write-Info "Couldn't read IIS config ($($_.Exception.Message))"
+    }
+}
+
 if (-not $ConnectionBroker -and (Get-WindowsFeature -Name RDS-Connection-Broker).Installed) {
     # 2. Broker role is installed on this server
     $ConnectionBroker = $localFqdn
@@ -155,7 +168,9 @@ if (-not $ConnectionBroker) {
 }
 
 if (-not $ConnectionBroker) {
-    throw 'Could not work out the Connection Broker. Re-run with -ConnectionBroker <fqdn>.'
+    throw ('Could not work out the Connection Broker. RDWeb on this server has no broker configured, ' +
+           'which usually means it was not added to the RDS deployment (check Server Manager > RDS > Overview on the broker). ' +
+           'If it is in the deployment, re-run with -ConnectionBroker <fqdn>.')
 }
 Write-Ok "Connection Broker: $ConnectionBroker"
 

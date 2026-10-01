@@ -71,7 +71,7 @@ The web client keeps its own copy of the broker certificate. **After renewing th
 
 | Symptom | Fix |
 | --- | --- |
-| `Could not work out the Connection Broker` | Re-run with `-ConnectionBroker <fqdn>`. |
+| `Could not work out the Connection Broker` | RDWeb on that server has no broker configured. Check that the server is in the RDS deployment as RD Web Access (Server Manager → Remote Desktop Services → Overview, on the broker), then re-run with `-ConnectionBroker <fqdn>`. |
 | Web client loads but can't connect | Usually a certificate problem: it's self-signed, doesn't match the broker's name, or the web client still has an old one. Check the certificate, then re-run the script. |
 | Users are refused a licence | The deployment is using Per Device CALs. Switch it to Per User. |
 | Script looks frozen | Text may be selected in the console window, which pauses the script. Press **Enter** or **Esc**. |

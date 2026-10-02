@@ -255,14 +255,9 @@ while ($true) {
         Write-Warning 'Broker certificate is self-signed. The web client will fail to connect unless every client trusts it - use a CA-issued cert.'
     }
 
-    if ($daysLeft -ge 0) {
-        if ($daysLeft -lt 60) {
-            Write-Warning "Broker certificate expires in $daysLeft days. After renewing it, re-run this script so the web client gets the new cert."
-        }
-        break
-    }
+    if ($daysLeft -ge 0) { break }
 
-    Write-Warning 'The broker certificate has EXPIRED. The web client will not connect until a valid cert is assigned and this script is re-run.'
+    Write-Warning 'The broker certificate has EXPIRED. The web client will not connect until a valid cert is in place.'
     if ($AllowExpiredCert) {
         Write-Warning '-AllowExpiredCert set - continuing with the expired certificate.'
         break
@@ -270,7 +265,7 @@ while ($true) {
 
     $choices = [System.Management.Automation.Host.ChoiceDescription[]]@(
         (New-Object System.Management.Automation.Host.ChoiceDescription '&Retry', 'Renew/assign the new cert first (Deployment Properties > Certificates), then check again.'),
-        (New-Object System.Management.Automation.Host.ChoiceDescription '&Use anyway', 'Install the web client with the expired cert. Re-run the script after renewing.'),
+        (New-Object System.Management.Automation.Host.ChoiceDescription '&Use anyway', 'Install the web client with the expired cert.'),
         (New-Object System.Management.Automation.Host.ChoiceDescription '&Abort', 'Stop without changing anything.')
     )
     try {

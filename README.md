@@ -50,7 +50,7 @@ From an **elevated Windows PowerShell 5.1** prompt (not PowerShell 7):
 4. **Gets the broker certificate** assigned to the RDS deployment (the RDRedirector role, falling back to RDPublishing):
    - If the same certificate is on this server (typical with a shared or wildcard cert), it uses that copy.
    - Otherwise it exports the certificate from the broker over PowerShell remoting.
-   - It warns if the certificate is self-signed or expires within 60 days.
+   - It warns if the certificate is self-signed.
    - If the certificate has expired, it asks whether to **Retry** (after you renew or assign a new certificate), **Use anyway**, or **Abort**.
 5. **Imports the certificate and publishes the latest web client** to production.
 6. **Checks the licensing mode** and warns if it's Per Device.
@@ -64,10 +64,6 @@ The script is safe to re-run. Each run gets the latest module and web client pac
 - **A trusted, CA-issued certificate** on the deployment. With a self-signed certificate, the web client fails to connect even when the classic RDWeb page works.
 - **Per User RDS CALs.** The web client doesn't support Per Device licensing.
 - PowerShell remoting (WinRM) from the Web Access server to the broker. This is only needed when the broker's certificate isn't already on the Web Access server.
-
-## Certificate renewals
-
-The web client keeps its own copy of the broker certificate. **After renewing the RDS certificate**, assign the new one in Server Manager → Remote Desktop Services → Deployment Properties → Certificates. Then **re-run this script** on each Web Access server. If you skip this, the web client stops connecting when the old certificate expires, even though the classic RDWeb page keeps working.
 
 ## Troubleshooting
 
